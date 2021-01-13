@@ -29,6 +29,24 @@ webhooks:
   sideEffects: None
   name: validation.webhook.kpack.io
 ---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: configmapvalidation.webhook.kpack.io
+webhooks:
+- admissionReviewVersions:
+  - v1beta1
+  clientConfig:
+    service:
+      name: kpack-webhook
+      namespace: kpack
+  failurePolicy: Fail
+  sideEffects: None
+  name: configmapvalidation.webhook.kpack.io
+  objectSelector:
+    matchLabels:
+      lifecycle.kpack.io/lifecycleImage: "true"
+---
 apiVersion: v1
 kind: Secret
 metadata:

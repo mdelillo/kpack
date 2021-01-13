@@ -17,12 +17,15 @@ import (
 	"knative.dev/pkg/signals"
 	"knative.dev/pkg/webhook"
 	"knative.dev/pkg/webhook/certificates"
+	"knative.dev/pkg/webhook/configmaps"
 	"knative.dev/pkg/webhook/resourcesemantics"
 	"knative.dev/pkg/webhook/resourcesemantics/defaulting"
 	"knative.dev/pkg/webhook/resourcesemantics/validation"
 
 	"github.com/pivotal/kpack/pkg/apis/build/v1alpha1"
 )
+
+var supportedPlatformApiVersions = []string{"0.2", "0.3"}
 
 var types = map[schema.GroupVersionKind]resourcesemantics.GenericCRD{
 	v1alpha1.SchemeGroupVersion.WithKind("Image"):          &v1alpha1.Image{},
@@ -49,6 +52,7 @@ func main() {
 		certificates.NewController,
 		defaultingAdmissionController,
 		validatingAdmissionController,
+		validatingConfgiMapAdmissionController,
 	)
 }
 
@@ -79,7 +83,7 @@ func validatingAdmissionController(ctx context.Context, _ configmap.Watcher) *co
 		"validation.webhook.kpack.io",
 		// The path on which to serve the webhook.
 		"/validate",
-		// The resources to default.
+		// The resources to validate.
 		types,
 		// A function that infuses the context passed to Validate/SetDefaults with custom metadata.
 		func(ctx context.Context) context.Context {
@@ -87,6 +91,22 @@ func validatingAdmissionController(ctx context.Context, _ configmap.Watcher) *co
 		},
 		// Whether to disallow unknown fields.
 		true,
+	)
+}
+
+func validatingConfgiMapAdmissionController(ctx context.Context, _ configmap.Watcher) *controller.Impl {
+	validator := v1alpha1.LifecycleImageValidator{
+		SupportedPlatformApiVersions: supportedPlatformApiVersions,
+	}
+
+	constructors := configmap.Constructors{
+		v1alpha1.LifecycleConfigName: validator.Validate,
+	}
+
+	return configmaps.NewAdmissionController(ctx,
+		"configmapvalidation.webhook.kpack.io",
+		"/cfg-validate",
+		constructors,
 	)
 }
 

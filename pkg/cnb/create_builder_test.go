@@ -147,7 +147,6 @@ func testCreateBuilder(t *testing.T, when spec.G, it spec.S) {
 
 		subject = RemoteBuilderCreator{
 			RegistryClient:         registryClient,
-			LifecycleImage:         lifecycleImage,
 			KpackVersion:           "v1.2.3 (git sha: abcdefg123456)",
 			NewBuildpackRepository: newBuildpackRepo,
 		}
@@ -274,7 +273,7 @@ func testCreateBuilder(t *testing.T, when spec.G, it spec.S) {
 		})
 
 		it("creates a custom builder", func() {
-			builderRecord, err := subject.CreateBuilder(keychain, store, stack, clusterBuilderSpec)
+			builderRecord, err := subject.CreateBuilder(keychain, lifecycleImage, store, stack, clusterBuilderSpec)
 			require.NoError(t, err)
 
 			assert.Len(t, builderRecord.Buildpacks, 3)
@@ -534,11 +533,11 @@ func testCreateBuilder(t *testing.T, when spec.G, it spec.S) {
 		})
 
 		it("creates images deterministically ", func() {
-			original, err := subject.CreateBuilder(keychain, store, stack, clusterBuilderSpec)
+			original, err := subject.CreateBuilder(keychain, lifecycleImage, store, stack, clusterBuilderSpec)
 			require.NoError(t, err)
 
 			for i := 1; i <= 50; i++ {
-				other, err := subject.CreateBuilder(keychain, store, stack, clusterBuilderSpec)
+				other, err := subject.CreateBuilder(keychain, lifecycleImage, store, stack, clusterBuilderSpec)
 				require.NoError(t, err)
 
 				require.Equal(t, original.Image, other.Image)
@@ -583,7 +582,7 @@ func testCreateBuilder(t *testing.T, when spec.G, it spec.S) {
 					},
 				}
 
-				_, err := subject.CreateBuilder(keychain, store, stack, clusterBuilderSpec)
+				_, err := subject.CreateBuilder(keychain, lifecycleImage, store, stack, clusterBuilderSpec)
 				require.EqualError(t, err, "validating buildpack io.buildpack.unsupported.stack@v4: stack io.buildpacks.stacks.cflinuxfs3 is not supported")
 			})
 
@@ -624,7 +623,7 @@ func testCreateBuilder(t *testing.T, when spec.G, it spec.S) {
 					},
 				}
 
-				_, err := subject.CreateBuilder(keychain, store, stack, clusterBuilderSpec)
+				_, err := subject.CreateBuilder(keychain, lifecycleImage, store, stack, clusterBuilderSpec)
 				require.EqualError(t, err, "validating buildpack io.buildpack.unsupported.mixin@v4: stack missing mixin(s): something-missing-mixin, something-missing-mixin2")
 			})
 
@@ -664,12 +663,10 @@ func testCreateBuilder(t *testing.T, when spec.G, it spec.S) {
 					},
 				}
 
-				_, err := subject.CreateBuilder(keychain, store, stack, clusterBuilderSpec)
+				_, err := subject.CreateBuilder(keychain, lifecycleImage, store, stack, clusterBuilderSpec)
 				require.EqualError(t, err, "validating buildpack io.buildpack.unsupported.buildpack.api@v4: unsupported buildpack api: 0.1, expecting: 0.2, 0.3")
 			})
-
 		})
-
 	})
 }
 

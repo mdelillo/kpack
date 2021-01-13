@@ -54,11 +54,17 @@ func testBuilderReconciler(t *testing.T, when spec.G, it spec.S) {
 				BuilderCreator:     builderCreator,
 				KeychainFactory:    keychainFactory,
 				Tracker:            fakeTracker,
+				ConfigMapLister:    listers.GetConfigMapLister(),
 				ClusterStoreLister: listers.GetClusterStoreLister(),
 				ClusterStackLister: listers.GetClusterStackLister(),
 			}
 			return r, rtesting.ActionRecorderList{fakeClient}, rtesting.EventList{Recorder: record.NewFakeRecorder(10)}
 		})
+
+	lifecycleConfig := &corev1.ConfigMap{
+		ObjectMeta: v1.ObjectMeta{Name: "lifecycle-image", Namespace: "kpack"},
+		Data:       map[string]string{"image": "some-lifecycle-image"},
+	}
 
 	clusterStore := &v1alpha1.ClusterStore{
 		ObjectMeta: v1.ObjectMeta{
@@ -194,6 +200,7 @@ func testBuilderReconciler(t *testing.T, when spec.G, it spec.S) {
 			rt.Test(rtesting.TableRow{
 				Key: builderKey,
 				Objects: []runtime.Object{
+					lifecycleConfig,
 					clusterStack,
 					clusterStore,
 					builder,
@@ -207,14 +214,15 @@ func testBuilderReconciler(t *testing.T, when spec.G, it spec.S) {
 			})
 
 			assert.Equal(t, []testhelpers.CreateBuilderArgs{{
-				Keychain:     &registryfakes.FakeKeychain{},
-				ClusterStore: clusterStore,
-				ClusterStack: clusterStack,
-				BuilderSpec:  builder.Spec.BuilderSpec,
+				Keychain:          &registryfakes.FakeKeychain{},
+				LifecycleImageRef: "some-lifecycle-image",
+				ClusterStore:      clusterStore,
+				ClusterStack:      clusterStack,
+				BuilderSpec:       builder.Spec.BuilderSpec,
 			}}, builderCreator.CreateBuilderCalls)
 		})
 
-		it("tracks the stack and store for a custom builder", func() {
+		it("tracks the stack, store, and lifecycle image config for a custom builder", func() {
 			builderCreator.Record = v1alpha1.BuilderRecord{
 				Image: builderIdentifier,
 				Stack: v1alpha1.BuildStack{
@@ -249,6 +257,7 @@ func testBuilderReconciler(t *testing.T, when spec.G, it spec.S) {
 			rt.Test(rtesting.TableRow{
 				Key: builderKey,
 				Objects: []runtime.Object{
+					lifecycleConfig,
 					clusterStack,
 					clusterStore,
 					expectedBuilder,
@@ -256,7 +265,8 @@ func testBuilderReconciler(t *testing.T, when spec.G, it spec.S) {
 				WantErr: false,
 			})
 
-			require.True(t, fakeTracker.IsTracking(clusterStore, builder.NamespacedName()))
+			require.True(t, fakeTracker.IsTracking(lifecycleConfig, builder.NamespacedName()))
+			require.True(t, fakeTracker.IsTracking(clusterStack, builder.NamespacedName()))
 			require.True(t, fakeTracker.IsTracking(clusterStack, builder.NamespacedName()))
 		})
 
@@ -301,6 +311,7 @@ func testBuilderReconciler(t *testing.T, when spec.G, it spec.S) {
 			rt.Test(rtesting.TableRow{
 				Key: builderKey,
 				Objects: []runtime.Object{
+					lifecycleConfig,
 					clusterStack,
 					clusterStore,
 					builder,
@@ -315,6 +326,7 @@ func testBuilderReconciler(t *testing.T, when spec.G, it spec.S) {
 			rt.Test(rtesting.TableRow{
 				Key: builderKey,
 				Objects: []runtime.Object{
+					lifecycleConfig,
 					clusterStack,
 					clusterStore,
 					builder,
@@ -364,6 +376,7 @@ func testBuilderReconciler(t *testing.T, when spec.G, it spec.S) {
 			rt.Test(rtesting.TableRow{
 				Key: builderKey,
 				Objects: []runtime.Object{
+					lifecycleConfig,
 					notReadyClusterStack,
 					clusterStore,
 					builder,
@@ -392,10 +405,10 @@ func testBuilderReconciler(t *testing.T, when spec.G, it spec.S) {
 			})
 
 			//still track resources
+			require.True(t, fakeTracker.IsTracking(lifecycleConfig, builder.NamespacedName()))
 			require.True(t, fakeTracker.IsTracking(clusterStore, builder.NamespacedName()))
 			require.True(t, fakeTracker.IsTracking(notReadyClusterStack, builder.NamespacedName()))
 			require.Len(t, builderCreator.CreateBuilderCalls, 0)
 		})
-
 	})
 }

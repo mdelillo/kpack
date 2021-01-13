@@ -22,6 +22,10 @@ kind: ConfigMap
 metadata:
   name:  lifecycle-image
   namespace: kpack
+  annotations:
+    lifecycle.kpack.io/platformApiVersions: "0.3 0.4"
+  labels:
+    lifecycle.kpack.io/lifecycleImage: "true"
 data:
   image: #@ data.values.lifecycle_image
 ---
@@ -80,11 +84,6 @@ spec:
           valueFrom:
             configMapKeyRef:
               name: completion-image
-              key: image
-        - name: LIFECYCLE_IMAGE
-          valueFrom:
-            configMapKeyRef:
-              name: lifecycle-image
               key: image
         resources:
           requests:

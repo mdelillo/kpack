@@ -181,8 +181,9 @@ func (bb *builderBlder) lifecycleLayer() (v1.Layer, error) {
 		return nil, err
 	}
 
-	if len(layers) != 1 {
-		return nil, errors.New("invalid lifecycle image")
+	// Image could have a windows layer
+	if len(layers) != 1 && len(layers) != 2 {
+		return nil, errors.New("invalid lifecycle image, expected only 1 or 2 layers")
 	}
 
 	return layers[0], nil

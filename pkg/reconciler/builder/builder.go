@@ -7,6 +7,8 @@ import (
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	corev1informers "k8s.io/client-go/informers/core/v1"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"knative.dev/pkg/controller"
 
@@ -29,13 +31,14 @@ const (
 type NewBuildpackRepository func(clusterStore *v1alpha1.ClusterStore) cnb.BuildpackRepository
 
 type BuilderCreator interface {
-	CreateBuilder(keychain authn.Keychain, clusterStore *v1alpha1.ClusterStore, clusterStack *v1alpha1.ClusterStack, spec v1alpha1.BuilderSpec) (v1alpha1.BuilderRecord, error)
+	CreateBuilder(keychain authn.Keychain, lifecycleImage string, clusterStore *v1alpha1.ClusterStore, clusterStack *v1alpha1.ClusterStack, spec v1alpha1.BuilderSpec) (v1alpha1.BuilderRecord, error)
 }
 
 func NewController(opt reconciler.Options,
 	builderInformer v1alpha1informers.BuilderInformer,
 	builderCreator BuilderCreator,
 	keychainFactory registry.KeychainFactory,
+	cfgMapInformer corev1informers.ConfigMapInformer,
 	clusterStoreInformer v1alpha1informers.ClusterStoreInformer,
 	clusterStackInformer v1alpha1informers.ClusterStackInformer,
 ) *controller.Impl {
@@ -44,6 +47,7 @@ func NewController(opt reconciler.Options,
 		BuilderLister:      builderInformer.Lister(),
 		BuilderCreator:     builderCreator,
 		KeychainFactory:    keychainFactory,
+		ConfigMapLister:    cfgMapInformer.Lister(),
 		ClusterStoreLister: clusterStoreInformer.Lister(),
 		ClusterStackLister: clusterStackInformer.Lister(),
 	}
@@ -63,6 +67,7 @@ type Reconciler struct {
 	BuilderCreator     BuilderCreator
 	KeychainFactory    registry.KeychainFactory
 	Tracker            reconciler.Tracker
+	ConfigMapLister    corev1listers.ConfigMapLister
 	ClusterStoreLister v1alpha1Listers.ClusterStoreLister
 	ClusterStackLister v1alpha1Listers.ClusterStackLister
 }
@@ -99,6 +104,21 @@ func (c *Reconciler) Reconcile(ctx context.Context, key string) error {
 }
 
 func (c *Reconciler) reconcileBuilder(builder *v1alpha1.Builder) (v1alpha1.BuilderRecord, error) {
+	lifecycleCfg, err := c.ConfigMapLister.ConfigMaps(v1alpha1.LifecycleConfigNamespace).Get(v1alpha1.LifecycleConfigName)
+	if err != nil {
+		return v1alpha1.BuilderRecord{}, err
+	}
+
+	lifecycleImage, ok := lifecycleCfg.Data[v1alpha1.LifecycleConfigImageKey]
+	if !ok {
+		return v1alpha1.BuilderRecord{}, errors.New("invalid lifecycle image configuration")
+	}
+
+	err = c.Tracker.Track(lifecycleCfg, builder.NamespacedName())
+	if err != nil {
+		return v1alpha1.BuilderRecord{}, err
+	}
+
 	clusterStore, err := c.ClusterStoreLister.Get(builder.Spec.Store.Name)
 	if err != nil {
 		return v1alpha1.BuilderRecord{}, err
@@ -131,7 +151,7 @@ func (c *Reconciler) reconcileBuilder(builder *v1alpha1.Builder) (v1alpha1.Build
 		return v1alpha1.BuilderRecord{}, err
 	}
 
-	return c.BuilderCreator.CreateBuilder(keychain, clusterStore, clusterStack, builder.Spec.BuilderSpec)
+	return c.BuilderCreator.CreateBuilder(keychain, lifecycleImage, clusterStore, clusterStack, builder.Spec.BuilderSpec)
 }
 
 func (c *Reconciler) updateStatus(desired *v1alpha1.Builder) error {

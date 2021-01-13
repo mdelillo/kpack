@@ -3,6 +3,7 @@ package cnb
 import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/pkg/errors"
 
 	"github.com/pivotal/kpack/pkg/apis/build/v1alpha1"
 )
@@ -20,12 +21,11 @@ type NewBuildpackRepository func(clusterStore *v1alpha1.ClusterStore) BuildpackR
 
 type RemoteBuilderCreator struct {
 	RegistryClient         RegistryClient
-	LifecycleImage         string
 	NewBuildpackRepository NewBuildpackRepository
 	KpackVersion           string
 }
 
-func (r *RemoteBuilderCreator) CreateBuilder(keychain authn.Keychain, clusterStore *v1alpha1.ClusterStore, clusterStack *v1alpha1.ClusterStack, spec v1alpha1.BuilderSpec) (v1alpha1.BuilderRecord, error) {
+func (r *RemoteBuilderCreator) CreateBuilder(keychain authn.Keychain, lifecycleImageRef string, clusterStore *v1alpha1.ClusterStore, clusterStack *v1alpha1.ClusterStack, spec v1alpha1.BuilderSpec) (v1alpha1.BuilderRecord, error) {
 	buildpackRepo := r.NewBuildpackRepository(clusterStore)
 
 	buildImage, _, err := r.RegistryClient.Fetch(keychain, clusterStack.Status.BuildImage.LatestImage)
@@ -33,9 +33,9 @@ func (r *RemoteBuilderCreator) CreateBuilder(keychain authn.Keychain, clusterSto
 		return v1alpha1.BuilderRecord{}, err
 	}
 
-	lifecycleImage, _, err := r.RegistryClient.Fetch(keychain, r.LifecycleImage)
+	lifecycleImage, _, err := r.RegistryClient.Fetch(keychain, lifecycleImageRef)
 	if err != nil {
-		return v1alpha1.BuilderRecord{}, err
+		return v1alpha1.BuilderRecord{}, errors.Wrap(err, "failed to fetch lifecycle image")
 	}
 
 	builderBldr, err := newBuilderBldr(lifecycleImage, r.KpackVersion)

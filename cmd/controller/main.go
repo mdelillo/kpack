@@ -59,7 +59,6 @@ var (
 	buildInitImage  = flag.String("build-init-image", os.Getenv("BUILD_INIT_IMAGE"), "The image used to initialize a build")
 	rebaseImage     = flag.String("rebase-image", os.Getenv("REBASE_IMAGE"), "The image used to perform rebases")
 	completionImage = flag.String("completion-image", os.Getenv("COMPLETION_IMAGE"), "The image used to finish a build")
-	lifecycleImage  = flag.String("lifecycle-image", os.Getenv("LIFECYCLE_IMAGE"), "The image used to provide lifecycle binaries")
 )
 
 func main() {
@@ -111,6 +110,9 @@ func main() {
 	pvcInformer := k8sInformerFactory.Core().V1().PersistentVolumeClaims()
 	podInformer := k8sInformerFactory.Core().V1().Pods()
 
+	namespacedK8sInformerFactory := informers.NewSharedInformerFactoryWithOptions(k8sClient, options.ResyncPeriod, informers.WithNamespace("kpack"))
+	cfgMapInformer := namespacedK8sInformerFactory.Core().V1().ConfigMaps()
+
 	keychainFactory, err := k8sdockercreds.NewSecretKeychainFactory(k8sClient)
 	if err != nil {
 		log.Fatalf("could not create k8s keychain factory: %s", err)
@@ -153,7 +155,6 @@ func main() {
 
 	builderCreator := &cnb.RemoteBuilderCreator{
 		RegistryClient:         &registry.Client{},
-		LifecycleImage:         *lifecycleImage,
 		KpackVersion:           cmd.Identifer,
 		NewBuildpackRepository: newBuildpackRepository(kpackKeychain),
 	}
@@ -161,14 +162,15 @@ func main() {
 	buildController := build.NewController(options, k8sClient, buildInformer, podInformer, metadataRetriever, buildpodGenerator)
 	imageController := image.NewController(options, k8sClient, imageInformer, buildInformer, duckBuilderInformer, sourceResolverInformer, pvcInformer)
 	sourceResolverController := sourceresolver.NewController(options, sourceResolverInformer, gitResolver, blobResolver, registryResolver)
-	builderController := builder.NewController(options, builderInformer, builderCreator, keychainFactory, clusterStoreInformer, clusterStackInformer)
-	clusterBuilderController := clusterBuilder.NewController(options, clusterBuilderInformer, builderCreator, keychainFactory, clusterStoreInformer, clusterStackInformer)
+	builderController := builder.NewController(options, builderInformer, builderCreator, keychainFactory, cfgMapInformer, clusterStoreInformer, clusterStackInformer)
+	clusterBuilderController := clusterBuilder.NewController(options, clusterBuilderInformer, builderCreator, keychainFactory, cfgMapInformer, clusterStoreInformer, clusterStackInformer)
 	clusterStoreController := clusterstore.NewController(options, clusterStoreInformer, remoteStoreReader)
 	clusterStackController := clusterstack.NewController(options, clusterStackInformer, remoteStackReader)
 
 	stopChan := make(chan struct{})
 	informerFactory.Start(stopChan)
 	k8sInformerFactory.Start(stopChan)
+	namespacedK8sInformerFactory.Start(stopChan)
 
 	waitForSync(stopChan,
 		buildInformer.Informer(),
@@ -176,6 +178,7 @@ func main() {
 		sourceResolverInformer.Informer(),
 		pvcInformer.Informer(),
 		podInformer.Informer(),
+		cfgMapInformer.Informer(),
 		builderInformer.Informer(),
 		clusterBuilderInformer.Informer(),
 		clusterStoreInformer.Informer(),
